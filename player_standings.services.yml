@@ -1,0 +1,6 @@
+services:
+  player_standings.twig_extension:
+    arguments: ['@renderer']
+    class: Drupal\player_standings\TwigExtension\PlayerStandings
+    tags:
+      - { name: twig.extension }

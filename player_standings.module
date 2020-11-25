@@ -1,0 +1,209 @@
+<?php
+
+/**
+ *  CPHL Standings
+ *
+ */
+
+use Drupal\node\Entity\Node;
+use Drupal\paragraphs\Entity\Paragraph;
+
+
+function player_standings_cron() {
+
+\Drupal::logger('player_standings')->notice(t('Player Standings Computed'));
+
+  $games = db_select('node__field_compute', 'n')
+    ->fields('n', array('entity_id'))
+    ->execute()->fetchAll();
+
+    $stats = [];
+
+    // Create master arrays
+    $gameStandings = [];
+
+    // Loop and load each game
+    foreach ($games as $key => $value) {
+      $compare = [];
+      $gameStandings[] = $key;
+      $stats[][$value->entity_id] = playerStats2($value->entity_id);
+    }
+
+  $playerData = [];
+  foreach ($stats as $arrayKey => $arrayValue) {
+    foreach ($arrayValue as $pkey => $pvalue) {
+      if (isset($pvalue)) {
+      foreach ($pvalue as $game => $gv) {
+          if (count($gv) > 0) {
+            if (!isset($playerData[$gv['nid']])) {
+              $playerData[$gv['nid']]['played'][]       = 'played';
+              $playerData[$gv['nid']]['goals']          = $gv['field_pdh_goals'];
+              $playerData[$gv['nid']]['assists']        = $gv['field_pdh_assists'];
+              $playerData[$gv['nid']]['pim']            = $gv['field_pdh_pim'];
+              $playerData[$gv['nid']]['sog']            = $gv['field_pdh_sog'];
+              $playerData[$gv['nid']]['saves']          = $gv['field_pdh_saves'];
+              $playerData[$gv['nid']]['ga']             = $gv['field_pdh_ga'];
+              $playerData[$gv['nid']]['minutes_played'] = $gv['field_pdh_minutes_played'];
+              $playerData[$gv['nid']]['points']         = $gv['field_pdh_points'];
+              $playerData[$gv['nid']]['finished']       = $gv['field_pdh_finished'];
+
+                if ($gv['field_pdh_game_won'] == 0 ||
+                    $gv['field_pdh_game_won'] == 1) {
+                  $playerData[$gv['nid']]['won']   = $gv['field_pdh_game_won'];
+                  $playerData[$gv['nid']]['lost']  = $gv['field_pdh_game_lost'];
+                }
+            }
+             else {
+              $playerData[$gv['nid']]['played'][]       = 'played';
+              $playerData[$gv['nid']]['goals']          = $playerData[$gv['nid']]['goals'] + $gv['field_pdh_goals'];
+              $playerData[$gv['nid']]['assists']        = $playerData[$gv['nid']]['assists'] + $gv['field_pdh_assists'];
+              $playerData[$gv['nid']]['pim']            = $playerData[$gv['nid']]['pim'] + $gv['field_pdh_pim'];
+              $playerData[$gv['nid']]['sog']            = $playerData[$gv['nid']]['sog'] + $gv['field_pdh_sog'];
+              $playerData[$gv['nid']]['saves']          = $playerData[$gv['nid']]['saves'] + $gv['field_pdh_saves'];
+              $playerData[$gv['nid']]['ga']             = $playerData[$gv['nid']]['ga'] + $gv['field_pdh_ga'];
+              $playerData[$gv['nid']]['minutes_played'] = $playerData[$gv['nid']]['minutes_played'] + $gv['field_pdh_minutes_played'];
+              $playerData[$gv['nid']]['points']         = $playerData[$gv['nid']]['points'] + $gv['field_pdh_points'];
+              $playerData[$gv['nid']]['finished']       = $playerData[$gv['nid']]['finished'] + $gv['field_pdh_finished'];
+              if ($gv['field_pdh_game_won'] == 0 ||
+                  $gv['field_pdh_game_won'] == 1) {
+                $playerData[$gv['nid']]['won']          = $playerData[$gv['nid']]['won'] + $gv['field_pdh_game_won'];
+                $playerData[$gv['nid']]['lost']         = $playerData[$gv['nid']]['lost'] + $gv['field_pdh_game_lost'];
+              }
+            }
+             $playerData[$gv['nid']]['games_played']++;
+          }
+        }
+      }
+    }
+  }
+
+
+
+
+foreach ($playerData as $key => $value) {
+    $node = Node::load($key);
+    if (is_object($node)) {
+      $node->set('field_player_games_played', $value['games_played']);
+      $node->set('field_player_goals', $value['goals']);
+      $node->set('field_player_assists', $value['assists']);
+      $node->set('field_player_pim', $value['pim']);
+      $node->set('field_player_sog', $value['sog']);
+      $node->set('field_player_saves', $value['saves']);
+      $node->set('field_player_ga', $value['ga']);
+      $node->set('field_player_minutes_played', $value['minutes_played']);
+      $node->set('field_player_points', $value['points']);
+      $node->set('field_player_games_won', $value['won']);
+      $node->set('field_player_games_lost', $value['lost']);
+      $node->save();
+    }
+}
+
+}
+
+
+function playerStats2($key) {
+
+  $game = Node::load($key);
+
+  $teamOrder = teamOrder($game);
+
+
+    $win = NULL;
+    $loss= NULL;
+
+    for ($i=1; $i < 3; $i++) {
+       $play_field = 'field_team_' . $i . '_player_data';
+
+      $playElement = $game->{$play_field}->getValue()[0]['target_id'];
+
+    if (count($game->{$play_field}->getValue()) > 0) {
+      foreach ($game->{$play_field}->getValue() as $playerKey => $playerTarget) {
+
+           $score = $teamOrder[$i-1]['final_score'];
+           foreach ($teamOrder as $tkey => $tvalue) {
+             if ($score == $tvalue['final_score']) {
+              if ($tkey < 1) {
+                $win = 0;
+                $loss = 1;
+              }
+               else {
+                $win = 1;
+                $loss = 0;
+               }
+             }
+           }
+
+
+
+       $playstanding = \Drupal\paragraphs\Entity\Paragraph::load($playerTarget['target_id']);
+
+       if ($playstanding->field_player_data->getValue()[0]['target_id'] > 0) {
+
+          $playerNID = $playstanding->field_player_data->getValue()[0]['target_id'];
+
+          // Set all the data to be saved into an array
+          $goals   = $playstanding->field_player_goals->getValue()[0]['value'];
+          $assists = $playstanding->field_player_assists->getValue()[0]['value'];
+          $saves   = $playstanding->field_player_saves->getValue()[0]['value'];
+          $sog     = $playstanding->field_player_sog->getValue()[0]['value'];
+
+          $playerData[$playerNID]['nid']                       = $playerNID;
+          $playerData[$playerNID]['field_pdh_game']            = $key;
+          $playerData[$playerNID]['field_pdh_goals']           = $goals;
+          $playerData[$playerNID]['field_pdh_assists']         = $assists;
+          $playerData[$playerNID]['field_pdh_pim']             = $playstanding->field_player_pim->getValue()[0]['value'];
+          $playerData[$playerNID]['field_pdh_sog']             = $sog;
+          $playerData[$playerNID]['field_pdh_saves']           = $saves;
+          $playerData[$playerNID]['field_pdh_ga']              = $playstanding->field_player_ga->getValue()[0]['value'];
+          $playerData[$playerNID]['field_pdh_minutes_played']  = $playstanding->field_player_minutes_played->getValue()[0]['value'];
+          $playerData[$playerNID]['field_pdh_points']          = $assists + $goals;
+
+
+            if($playstanding->field_goalie_finishes_game->getValue()[0]['value'] == 1) {
+              if ($win >= 0) {
+                $playerData[$playerNID]['field_pdh_game_won']        = $win;
+                $playerData[$playerNID]['field_pdh_game_lost']       = $loss;
+              }
+            }
+
+            if ($saves > 0 && $sog > 0) {
+              $playerData[$playerNID]['field_pdh_save_percentage']   = ($saves / $sog);
+            }
+           }
+          }
+         }
+       }
+
+    return $playerData;
+}
+
+
+function teamOrder($game) {
+
+  for ($i=1; $i < 3; $i++) {
+       $team_field = 'field_team_' . $i . '_data';
+
+        $teamData = $game->{$team_field}->getValue();
+        foreach ( $teamData as $element ) {
+          $p = \Drupal\paragraphs\Entity\Paragraph::load($element['target_id']);
+          $team = Node::load($p->field_team->getValue()[0]['target_id']);
+            $teams[$i]['final_score'] = $p->field_final_score->getValue()[0]['value'];
+        }
+      }
+
+    usort($teams, function ($a, $b) {
+        $c = $a['final_score'];
+        $d = $b['final_score'];
+        if ($c == $d){
+            return 0;
+        }
+        else if($c < $d){
+           return 1;
+        }
+        else{
+           return -1;
+        }
+    });
+
+  return array_values($teams);
+}

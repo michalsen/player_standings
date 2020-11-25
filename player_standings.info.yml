@@ -1,0 +1,5 @@
+name: Cron Player Standings
+type: module
+description: 'Player Standings on Cron'
+core: 8.x
+package: Michalsen
